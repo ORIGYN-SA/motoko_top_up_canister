@@ -1,0 +1,64 @@
+@startuml
+autonumber
+
+title ICP Canisters Automatic Top-up
+
+' actor Developer as "Developer"
+actor DAO as "DAO / Canister Op"
+participant topupService as "Caller"
+
+box "ICP" #LightBlue
+    ' participant developerWallet as "Developer Wallet Canister"
+    participant daoCanister as "DAO Canister"
+    participant topUpWalletCanister as "ICP Cycles Top-up Canister"
+    collections canisters as "Canisters"
+end  box
+
+note over topupService: NodeJS Service\n
+' note over Developer: Is loaded w/ controller key\nfor "Developer Wallet Canister"
+
+== DAO adds cycles into ICP Top-up Canister ==
+DAO -> daoCanister: send_cycles(topUpWalletCanister)
+daoCanister ---> topUpWalletCanister: deposit_cycles(...)
+
+== ICP Top-Up Canister initialization ==
+
+note over DAO: DAO sets on which canisters\nthe canister would monitor (canisters,threshold, amount)
+DAO -> topUpWalletCanister: setCanisters(...canisters)
+DAO -> topUpWalletCanister: setThreshold(...threshold)
+DAO -> topUpWalletCanister: setTopupAmount(...topUpAmount)
+
+note over DAO: DAO sets the list of callers\nof the `cronTask` (aka. periodic task)
+DAO -> topUpWalletCanister: setCallers(...Caller)
+
+
+
+== Caller periodic task ==
+
+loop "every hour"
+    topupService -> topUpWalletCanister: cronTask()
+    loop "for each canisters"
+        topUpWalletCanister -> canisters: canisterBalance()
+        canisters -> topUpWalletCanister: N cycles
+        alt "if N < threshold"
+            note over topUpWalletCanister: amount = threshold - N + topUpAmount
+            topUpWalletCanister --> canisters: topUp({cycles: amount})
+
+        else "if N > threshold"
+            note over topUpWalletCanister: do nothing
+        else "fails"
+            note over topUpWalletCanister: append error to results
+        end 
+    end loop
+    topUpWalletCanister -> topupService: Result[]
+
+
+end loop
+
+== Alerting low cycles in Top Up Wallet Canister ==
+
+note over topupService: Every hour\nFetch wallet balance\nalert via webhook\nif below threshold
+topupService -> topupService: Call Webhook
+
+
+@enduml
